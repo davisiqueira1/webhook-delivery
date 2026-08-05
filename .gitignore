@@ -93,3 +93,8 @@ Desktop.ini
 desktop.ini
 $RECYCLE.BIN/
 .DS_Store
+
+# Local development
+CLAUDE.local.md
+backlog.md
+.env
