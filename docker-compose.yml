@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER key missing-username}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD key missing-password}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB key missing-webhook_delivery}
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+  mq:
+    image: softwaremill/elasticmq-native:1.7.1
+    ports:
+      - '9324:9324'
+    volumes:
+      - ./elasticmq.conf:/opt/elasticmq.conf:ro
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'wget -q -O /dev/null "http://localhost:9324/?Action=ListQueues"',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  pgdata:

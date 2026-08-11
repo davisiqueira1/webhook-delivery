@@ -1,98 +1,124 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Webhook Delivery Service
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Serviço de entrega de webhooks: recebe um evento, um destino e um secret, e garante que o
+evento chega ao destino com assinatura HMAC, retry com backoff exponencial, dead letter queue e
+histórico auditável de cada tentativa.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Especificação completa em [docs/spec.md](docs/spec.md).
 
-## Description
+## Stack
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- NestJS (monorepo com dois apps: `api` e `worker`)
+- PostgreSQL
+- SQS (ElasticMQ como emulador local)
+- ECS Fargate + Terraform (ainda não implementado)
 
-## Project setup
+## Estado atual
 
-```bash
-$ npm install
-```
+Em construção. Hoje existe a configuração tipada e validada no boot (`apps/api/src/config`) e o
+ambiente local com Docker. As rotas da API, a persistência e o worker ainda não existem.
 
-## Compile and run the project
+## Requisitos
 
-```bash
-# development
-$ npm run start
+- Node.js 20+
+- Docker Desktop
 
-# watch mode
-$ npm run start:dev
+## Ambiente local
 
-# production mode
-$ npm run start:prod
-```
+O `docker-compose.yml` sobe dois serviços:
 
-## Run tests
+| Serviço | Imagem | Porta | Função |
+|---|---|---|---|
+| `db` | `postgres:17` | 5432 | Banco de dados |
+| `mq` | `softwaremill/elasticmq-native:1.7.1` | 9324 | Emulador de SQS |
+
+A aplicação roda fora do compose, direto na máquina, e alcança os dois por `localhost`.
+
+As filas `webhook-delivery` e `webhook-delivery-dlq` são declaradas em
+[elasticmq.conf](elasticmq.conf) e criadas no boot do container. Não há comando manual de
+criação de fila.
+
+### Subir do zero
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+cp .env.example .env
+npm install
+docker compose up -d --wait
 ```
 
-## Deployment
+O `--wait` só retorna quando os healthchecks dos dois containers passam. Sem ele o comando volta
+antes de o Postgres aceitar conexão.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### Rodar a aplicação
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npm run start:dev
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+O script `prestart:dev` executa `docker compose up -d --wait` antes de subir o Nest, então não é
+preciso lembrar de ligar os containers. O comando é idempotente: se já estiverem no ar, retorna
+imediatamente.
 
-## Resources
+### Comandos úteis
 
-Check out a few resources that may come in handy when working with NestJS:
+```bash
+docker compose ps                  # estado dos containers (deve mostrar "Up (healthy)")
+docker compose logs -f db          # logs de um serviço
+docker compose down                # derruba os containers, preserva os dados
+docker compose down -v             # derruba tudo e APAGA o volume do Postgres
+```
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+Use `down -v` quando o banco ficar sujo ou quando mudar `POSTGRES_USER`, `POSTGRES_PASSWORD` ou
+`POSTGRES_DB`. Essas três variáveis só têm efeito na primeira inicialização, com o volume vazio.
+Alterá-las sem apagar o volume não muda nada e gera erro de autenticação.
 
-## Support
+### Verificar o ambiente
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+```bash
+# filas criadas
+curl "http://localhost:9324/?Action=ListQueues"
 
-## Stay in touch
+# conexão com o banco
+docker compose exec db psql -U webhook -d webhook_delivery -c "\conninfo"
+```
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+O `ListQueues` deve retornar as duas filas. No PowerShell use `curl.exe`, porque `curl` é alias
+de `Invoke-WebRequest`.
 
-## License
+## Configuração
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Todas as variáveis são validadas no boot contra um schema zod
+([env.schema.ts](apps/api/src/config/env.schema.ts)). A aplicação não sobe se qualquer uma
+estiver ausente ou malformada.
+
+| Variável | Descrição |
+|---|---|
+| `NODE_ENV` | `development`, `production` ou `test` |
+| `PORT` | Porta HTTP da API |
+| `DATABASE_URL` | String de conexão do Postgres |
+| `API_KEY` | Chave esperada no header `X-Api-Key` |
+| `SQS_QUEUE_URL` | URL da fila de entregas |
+| `AWS_REGION` | Região da AWS |
+| `DB_POOL_SIZE` | Tamanho do pool de conexões |
+| `LOG_LEVEL` | Nível de log |
+
+As variáveis `POSTGRES_USER`, `POSTGRES_PASSWORD` e `POSTGRES_DB` não são lidas pela aplicação.
+São consumidas pelo `docker-compose.yml` para inicializar o container do banco, e precisam ser
+coerentes com o `DATABASE_URL`.
+
+## Estrutura
+
+```
+apps/api/         API HTTP: ingestão de mensagens e consultas
+apps/worker/      Worker de entrega (consome da fila)
+libs/shared/      Código compartilhado entre os dois apps
+docs/spec.md      Especificação do projeto
+elasticmq.conf    Declaração das filas do emulador local
+```
+
+## Testes
+
+```bash
+npm test           # unitários
+npm run test:e2e   # end to end
+```
